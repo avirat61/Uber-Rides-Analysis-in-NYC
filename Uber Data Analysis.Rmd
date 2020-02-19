@@ -1,0 +1,143 @@
+---
+title: "Uber Data Analysis"
+author: "Avirat Gaikwad"
+date: "February 19, 2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Libraries required for the project:
+```{r, echo = FALSE}
+library(ggplot2)
+library(ggthemes)
+library(lubridate)
+library(dplyr)
+library(tidyr)
+library(scales)
+library(DT)
+```
+
+#### Loading data
+```{r}
+apr_data <- read.csv("uber-raw-data-apr14.csv")
+may_data <- read.csv("uber-raw-data-may14.csv")
+jun_data <- read.csv("uber-raw-data-jun14.csv")
+jul_data <- read.csv("uber-raw-data-jul14.csv")
+aug_data <- read.csv("uber-raw-data-aug14.csv")
+sep_data <- read.csv("uber-raw-data-sep14.csv")
+
+dataset = rbind(apr_data,may_data,jun_data,jul_data,aug_data,sep_data)
+summary(dataset)
+```
+
+```{r}
+str(dataset)
+```
+
+#### Data processing
+```{r}
+dataset$Date.Time <- as.POSIXct(dataset$Date.Time, format = "%m/%d/%Y %H:%M:%S")
+dataset$Time <- format(as.POSIXct(dataset$Date.Time, format = "%m/%d/%Y %H:%M:%S"), format="%H:%M:%S")
+dataset$Date.Time <- ymd_hms(dataset$Date.Time)
+dataset$day <- factor(day(dataset$Date.Time))
+dataset$month <- factor(month(dataset$Date.Time, label = TRUE))
+dataset$year <- factor(year(dataset$Date.Time))
+dataset$dayofweek <- factor(wday(dataset$Date.Time, label = TRUE))
+dataset$hour <- factor(hour(hms(dataset$Time)))
+dataset$minute <- factor(minute(hms(dataset$Time)))
+dataset$second <- factor(second(hms(dataset$Time)))
+head(dataset)
+```
+
+
+```{r}
+dataset$time_of_day = as.numeric(factor(dataset$hour))
+dataset$time_of_day = dataset$time_of_day - 1
+
+dataset$split_day = ifelse(dataset$time_of_day>=0 & dataset$time_of_day<=4,"Night",
+                    ifelse(dataset$time_of_day>4 & dataset$time_of_day<=8,"Early Morning",
+                    ifelse(dataset$time_of_day>8 & dataset$time_of_day<=12,"Morning",
+                    ifelse(dataset$time_of_day>12 & dataset$time_of_day<=16,"Afternoon",
+                    ifelse(dataset$time_of_day>16 & dataset$time_of_day<=20,"Evening",
+                    ifelse(dataset$time_of_day>20 & dataset$time_of_day<=24,"Party Hours", "None"))))))
+
+dataset$split_day = as.factor(dataset$split_day)
+str(dataset)
+```
+
+#### Data Visualization
+```{r}
+trips_by_weekday = dataset %>% group_by(dayofweek, split_day) %>%summarize(Total = n())
+
+ggplot()+
+  geom_bar(data = trips_by_weekday, aes(x= trips_by_weekday$dayofweek, y =trips_by_weekday$Total, fill = split_day), stat = "identity") +
+  scale_y_continuous(labels = comma) +
+  xlab("Day of the week") +
+  ylab("Number of trips") + 
+  scale_fill_discrete(name = "Time of the day")
+```
+
+Observations from the graph: 
+
+1. We observe that the highest number of trips are on a Thursday and not the weekend or Friday.
+2. Maximum number of trips occur during the evening i.e. 4 p.m. to 8 p.m. followed by Afternoon.
+3. The party hours from 8 p.m. to 12 a.m. are higher on Thursdays, Fridays and Saturday since people usually go out closer to the weekend.
+4. Number of trips on Sunday night are higher as compared to any other weekday.
+
+```{r}
+trips_for_entire_month = dataset %>% group_by(day) %>% summarize(Total = n())  
+
+ggplot(trips_for_entire_month, aes(x = trips_for_entire_month$day, y = trips_for_entire_month$Total, group = 1)) +
+  geom_line(color="steelblue2", size=2, alpha=0.9, linetype=1) +
+  geom_hline(yintercept = mean(trips_for_entire_month$Total), color="red") +
+  theme_economist_white() +
+  xlab("Month") +
+  ylab("Number of trips")
+```
+
+
+Observations from the graph:
+
+1. The number of trips on the end of the month are very low. This could be because we don't have the 31st in a few months in our dataframe.
+2. The red line depicts the average for all the trips for our dataset. The number of trips keep moving up in the first week but are still below average till Weekday 5.
+
+```{r}
+min_lat <- 40.5774
+max_lat <- 40.9176
+min_long <- -74.15
+max_long <- -73.7004
+
+ggplot(dataset, aes(x=Lon, y=Lat)) +
+  geom_point(size=1, color = "steelblue2") +
+     scale_x_continuous(limits=c(min_long, max_long)) +
+      scale_y_continuous(limits=c(min_lat, max_lat)) +
+        theme_map() +
+           ggtitle("NYC MAP BASED ON UBER RIDES DURING 2014 (APR-SEP)")
+```
+
+```{r}
+ggplot(dataset, aes(x=Lon, y=Lat, color = Base)) +
+  geom_point(size=1) +
+     scale_x_continuous(limits=c(min_long, max_long)) +
+      scale_y_continuous(limits=c(min_lat, max_lat)) +
+       theme_map() +
+          ggtitle("NYC MAP BASED ON UBER RIDES DURING 2014 (APR-SEP) by BASE")
+```
+
+### Heatmap visualization of rides by hour and day
+```{r}
+rides_by_hourday <- dataset %>% group_by(day, hour) %>% summarize(Total = n())
+datatable(rides_by_hourday)
+```
+
+```{r}
+ggplot(rides_by_hourday, aes(day, hour, fill = Total)) +
+            geom_tile(color = "white") +
+            xlab("Day") +
+            ylab("Hour") +
+              ggtitle("Heat Map by Hour and Day")
+```
+
